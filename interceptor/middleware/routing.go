@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -15,17 +16,27 @@ import (
 var (
 	kubernetesProbeUserAgent = regexp.MustCompile(`(^|\s)kube-probe/`)
 	googleHCUserAgent        = regexp.MustCompile(`(^|\s)GoogleHC/`)
+
+	healthCheckPathAnnotation      = "http.kedify.io/healthcheck-path"
+	healthCheckResponseAnnotation  = "http.kedify.io/healthcheck-response"
+	healthCheckResponseStatic      = "static"
+	healthCheckResponsePassthrough = "passthrough"
 )
 
+// EndpointCheckFn is a function that checks if a workload has any active endpoints.
+type EndpointCheckFn func(context.Context, string, string) (bool, error)
+
 type Routing struct {
+	endpointActive  EndpointCheckFn
 	routingTable    routing.Table
 	probeHandler    http.Handler
 	upstreamHandler http.Handler
 	tlsEnabled      bool
 }
 
-func NewRouting(routingTable routing.Table, probeHandler http.Handler, upstreamHandler http.Handler, tlsEnabled bool) *Routing {
+func NewRouting(ecf EndpointCheckFn, routingTable routing.Table, probeHandler http.Handler, upstreamHandler http.Handler, tlsEnabled bool) *Routing {
 	return &Routing{
+		endpointActive:  ecf,
 		routingTable:    routingTable,
 		probeHandler:    probeHandler,
 		upstreamHandler: upstreamHandler,
@@ -50,7 +61,25 @@ func (rm *Routing) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+	isHealthCheckPath := isHealthCheckPath(r, httpso)
+	if isHealthCheckPath {
+		if httpso.Annotations[healthCheckResponseAnnotation] == healthCheckResponseStatic {
+			// for static healthchecks, interceptor always responds
+			rm.probeHandler.ServeHTTP(w, r)
+			return
+		}
+		// for passthrough healthchecks, interceptor only responds if there are no endpoints
+		isActive, err := rm.endpointActive(r.Context(), httpso.GetNamespace(), httpso.Spec.ScaleTargetRef.Service)
+		if err != nil {
+			util.LoggerFromContext(r.Context()).Error(err, "error checking if endpoint for healthcheck is active")
+		}
+		if err == nil && !isActive {
+			rm.probeHandler.ServeHTTP(w, r)
+			return
+		}
+	}
 	r = r.WithContext(util.ContextWithHTTPSO(r.Context(), httpso))
+	r = r.WithContext(util.ContextWithHealthCheck(r.Context(), isHealthCheckPath))
 
 	stream, err := rm.streamFromHTTPSO(httpso)
 	if err != nil {
@@ -86,4 +115,8 @@ func (rm *Routing) isProbe(r *http.Request) bool {
 	ua := r.UserAgent()
 
 	return kubernetesProbeUserAgent.Match([]byte(ua)) || googleHCUserAgent.Match([]byte(ua))
+}
+
+func isHealthCheckPath(r *http.Request, httpso *httpv1alpha1.HTTPScaledObject) bool {
+	return r.URL.Path == httpso.Annotations[healthCheckPathAnnotation]
 }

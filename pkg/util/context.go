@@ -15,6 +15,7 @@ const (
 	ckLogger contextKey = iota
 	ckHTTPSO
 	ckStream
+	ckHealthCheck
 )
 
 func ContextWithLogger(ctx context.Context, logger logr.Logger) context.Context {
@@ -30,8 +31,17 @@ func ContextWithHTTPSO(ctx context.Context, httpso *httpv1alpha1.HTTPScaledObjec
 	return context.WithValue(ctx, ckHTTPSO, httpso)
 }
 
+func ContextWithHealthCheck(ctx context.Context, isHealthCheck bool) context.Context {
+	return context.WithValue(ctx, ckHealthCheck, isHealthCheck)
+}
+
 func HTTPSOFromContext(ctx context.Context) *httpv1alpha1.HTTPScaledObject {
 	cv, _ := ctx.Value(ckHTTPSO).(*httpv1alpha1.HTTPScaledObject)
+	return cv
+}
+
+func HealthCheckFromContext(ctx context.Context) bool {
+	cv, _ := ctx.Value(ckHealthCheck).(bool)
 	return cv
 }
 

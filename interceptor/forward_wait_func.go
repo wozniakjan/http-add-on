@@ -7,6 +7,7 @@ import (
 	"github.com/go-logr/logr"
 	v1 "k8s.io/api/core/v1"
 
+	"github.com/kedacore/http-add-on/interceptor/middleware"
 	"github.com/kedacore/http-add-on/pkg/k8s"
 )
 
@@ -20,6 +21,24 @@ func workloadActiveEndpoints(endpoints v1.Endpoints) int {
 		total += len(subset.Addresses)
 	}
 	return total
+}
+
+func newWorkloadEndpointCheckFunc(
+	lggr logr.Logger,
+	endpointCache k8s.EndpointsCache,
+) middleware.EndpointCheckFn {
+	return func(ctx context.Context, endpointNS, endpointName string) (bool, error) {
+		endpoints, err := endpointCache.Get(endpointNS, endpointName)
+		if err != nil {
+			return false, fmt.Errorf(
+				"error getting state for endpoints %s/%s: %w",
+				endpointNS,
+				endpointName,
+				err,
+			)
+		}
+		return workloadActiveEndpoints(endpoints) > 0, nil
+	}
 }
 
 func newWorkloadReplicasForwardWaitFunc(

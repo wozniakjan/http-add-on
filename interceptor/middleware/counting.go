@@ -30,7 +30,11 @@ func (cm *Counting) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r = util.RequestWithLoggerWithName(r, "CountingMiddleware")
 	ctx := r.Context()
 
-	defer cm.countAsync(ctx)()
+	isHealthCheck := util.HealthCheckFromContext(ctx)
+	if !isHealthCheck {
+		// exclude health checks from counting
+		defer cm.countAsync(ctx)()
+	}
 
 	cm.upstreamHandler.ServeHTTP(w, r)
 }

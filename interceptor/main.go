@@ -92,6 +92,7 @@ func main() {
 		os.Exit(1)
 	}
 	waitFunc := newWorkloadReplicasForwardWaitFunc(ctrl.Log, endpointsCache)
+	endpointsActiveFunc := newWorkloadEndpointCheckFunc(ctrl.Log, endpointsCache)
 
 	httpCl, err := clientset.NewForConfig(cfg)
 	if err != nil {
@@ -173,7 +174,7 @@ func main() {
 
 			setupLog.Info("starting the proxy server with TLS enabled", "port", proxyTLSPort)
 
-			if err := runProxyServer(ctx, ctrl.Log, queues, waitFunc, routingTable, timeoutCfg, proxyTLSPort, proxyTLSEnabled, proxyTLSConfig); !util.IsIgnoredErr(err) {
+			if err := runProxyServer(ctx, ctrl.Log, queues, waitFunc, endpointsActiveFunc, routingTable, timeoutCfg, proxyTLSPort, proxyTLSEnabled, proxyTLSConfig); !util.IsIgnoredErr(err) {
 				setupLog.Error(err, "tls proxy server failed")
 				return err
 			}
@@ -185,7 +186,7 @@ func main() {
 	eg.Go(func() error {
 		setupLog.Info("starting the proxy server with TLS disabled", "port", proxyPort)
 
-		if err := runProxyServer(ctx, ctrl.Log, queues, waitFunc, routingTable, timeoutCfg, proxyPort, false, nil); !util.IsIgnoredErr(err) {
+		if err := runProxyServer(ctx, ctrl.Log, queues, waitFunc, endpointsActiveFunc, routingTable, timeoutCfg, proxyPort, false, nil); !util.IsIgnoredErr(err) {
 			setupLog.Error(err, "proxy server failed")
 			return err
 		}
@@ -237,6 +238,7 @@ func runProxyServer(
 	logger logr.Logger,
 	q queue.Counter,
 	waitFunc forwardWaitFunc,
+	endpointsActiveFunc middleware.EndpointCheckFn,
 	routingTable routing.Table,
 	timeouts *config.Timeouts,
 	port int,
@@ -286,6 +288,7 @@ func runProxyServer(
 
 	var rootHandler http.Handler
 	rootHandler = middleware.NewRouting(
+		endpointsActiveFunc,
 		routingTable,
 		probeHandler,
 		upstreamHandler,
