@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/cache"
 
+	"github.com/kedacore/http-add-on/interceptor/envoycp"
 	httpv1alpha1 "github.com/kedacore/http-add-on/operator/apis/http/v1alpha1"
 	"github.com/kedacore/http-add-on/operator/generated/informers/externalversions"
 	informershttpv1alpha1 "github.com/kedacore/http-add-on/operator/generated/informers/externalversions/http/v1alpha1"
@@ -42,14 +43,16 @@ type table struct {
 	memoryHolder                             util.AtomicValue[TableMemory]
 	memorySignaler                           util.Signaler
 	queueCounter                             queue.Counter
+	ecp                                      envoycp.Server
 }
 
-func NewTable(sharedInformerFactory externalversions.SharedInformerFactory, namespace string, counter queue.Counter) (Table, error) {
+func NewTable(sharedInformerFactory externalversions.SharedInformerFactory, namespace string, counter queue.Counter, ecp envoycp.Server) (Table, error) {
 	httpScaledObjects := informershttpv1alpha1.New(sharedInformerFactory, namespace, nil).HTTPScaledObjects()
 
 	t := table{
 		httpScaledObjects: make(map[types.NamespacedName]*httpv1alpha1.HTTPScaledObject),
 		memorySignaler:    util.NewSignaler(),
+		ecp:               ecp,
 	}
 
 	informer, ok := httpScaledObjects.Informer().(sharedIndexInformer)
@@ -150,6 +153,8 @@ func (t *table) OnAdd(obj interface{}, _ bool) {
 	if !ok {
 		return
 	}
+	t.ecp.HandleHSO(context.Background(), httpScaledObject)
+
 	key := *k8s.NamespacedNameFromObject(httpScaledObject)
 
 	window := time.Minute
@@ -181,6 +186,7 @@ func (t *table) OnUpdate(oldObj interface{}, newObj interface{}) {
 		return
 	}
 	newKey := *k8s.NamespacedNameFromObject(newHTTPSO)
+	t.ecp.HandleHSO(context.Background(), newHTTPSO)
 
 	window := time.Minute
 	granualrity := time.Second
@@ -210,6 +216,7 @@ func (t *table) OnDelete(obj interface{}) {
 	if !ok {
 		return
 	}
+	t.ecp.HandleHSO(context.Background(), httpScaledObject)
 	key := *k8s.NamespacedNameFromObject(httpScaledObject)
 
 	defer t.memorySignaler.Signal()

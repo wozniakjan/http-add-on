@@ -28,8 +28,8 @@ import (
 )
 
 const (
-	// envoyClusterNameAnnotation is the annotation key for the envoy cluster name.
-	envoyClusterNameAnnotation = "http.kedify.io/envoy-cluster-name"
+	// EnvoyClusterNameAnnotation is the annotation key for the envoy cluster name.
+	EnvoyClusterNameAnnotation = "http.kedify.io/envoy-cluster-name"
 	externalProxyMetricKey     = "http.kedify.io/external-proxy-metric-key"
 
 	// envoy metrics representing RPS and pending requests.
@@ -227,7 +227,7 @@ func getClusterNameFromAnnotations(annotations map[string]string) string {
 	if annotations[externalProxyMetricKey] != "" {
 		return annotations[externalProxyMetricKey]
 	}
-	return annotations[envoyClusterNameAnnotation]
+	return annotations[EnvoyClusterNameAnnotation]
 }
 
 // addCluserNameToMetrics adds the cluster name to the metrics.

@@ -19,6 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/kedacore/http-add-on/interceptor/config"
+	"github.com/kedacore/http-add-on/interceptor/envoycp"
 	"github.com/kedacore/http-add-on/interceptor/envoysink"
 	"github.com/kedacore/http-add-on/interceptor/handler"
 	"github.com/kedacore/http-add-on/interceptor/metrics"
@@ -72,6 +73,7 @@ func main() {
 	proxyPort := servingCfg.ProxyPort
 	adminPort := servingCfg.AdminPort
 	envoyMetricsPort := servingCfg.EnvoyStatsMetricSinkPort
+	envoyControlPlanePort := servingCfg.EnvoyControlPlanePort
 	proxyTLSEnabled := servingCfg.ProxyTLSEnabled
 
 	// setup the configured metrics collectors
@@ -106,7 +108,13 @@ func main() {
 	externalQueues := queue.NewMemory()
 
 	sharedInformerFactory := informers.NewSharedInformerFactory(httpCl, servingCfg.ConfigMapCacheRsyncPeriod)
-	routingTable, err := routing.NewTable(sharedInformerFactory, servingCfg.WatchNamespace, queues)
+	envoycp := envoycp.NewServer(ctrl.Log.WithName("envoy-control-plane"), httpCl, envoycp.Options{
+		ClusterDomain:     servingCfg.ClusterDomain,
+		ConnectionTimeout: timeoutCfg.Connect,
+		ControlPlaneHost:  fmt.Sprintf("%s.%s.svc.%s", servingCfg.EnvoyControlPlaneServiceName, servingCfg.CurrentNamespace, servingCfg.ClusterDomain),
+		ControlPlanePort:  uint32(envoyControlPlanePort),
+	})
+	routingTable, err := routing.NewTable(sharedInformerFactory, servingCfg.WatchNamespace, queues, envoycp)
 	if err != nil {
 		setupLog.Error(err, "fetching routing table")
 		os.Exit(1)
@@ -167,6 +175,16 @@ func main() {
 			return err
 		}
 
+		return nil
+	})
+
+	// start the envoy control plane server for xDS
+	eg.Go(func() error {
+		setupLog.Info("starting the envoy control plane server", "port", 5678)
+		if err := envoycp.Run(ctx); !util.IsIgnoredErr(err) {
+			setupLog.Error(err, "envoy control plane server failed")
+			return err
+		}
 		return nil
 	})
 
