@@ -63,19 +63,24 @@ func (rm *Routing) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	isHealthCheckPath := isHealthCheckPath(r, httpso)
 	if isHealthCheckPath {
-		if httpso.Annotations[healthCheckResponseAnnotation] == healthCheckResponseStatic {
+		healthCheckResponse := httpso.Annotations[healthCheckResponseAnnotation]
+		if healthCheckResponse == healthCheckResponseStatic {
 			// for static healthchecks, interceptor always responds
 			rm.probeHandler.ServeHTTP(w, r)
 			return
-		}
-		// for passthrough healthchecks, interceptor only responds if there are no endpoints
-		isActive, err := rm.endpointActive(r.Context(), httpso.GetNamespace(), httpso.Spec.ScaleTargetRef.Service)
-		if err != nil {
-			util.LoggerFromContext(r.Context()).Error(err, "error checking if endpoint for healthcheck is active")
-		}
-		if err == nil && !isActive {
-			rm.probeHandler.ServeHTTP(w, r)
-			return
+		} else if healthCheckResponse == "" || healthCheckResponse == healthCheckResponsePassthrough {
+			// for passthrough healthchecks or if annotation is not set, interceptor only responds if there are no endpoints
+			isActive, err := rm.endpointActive(r.Context(), httpso.GetNamespace(), httpso.Spec.ScaleTargetRef.Service)
+			if err != nil {
+				util.LoggerFromContext(r.Context()).Error(err, "error checking if endpoint for healthcheck is active")
+			}
+			if err == nil && !isActive {
+				rm.probeHandler.ServeHTTP(w, r)
+				return
+			}
+		} else {
+			// unknown healthcheck response type
+			util.LoggerFromContext(r.Context()).Error(fmt.Errorf("invalid healthcheck response type"), "invalid healthcheck response type %s", healthCheckResponse)
 		}
 	}
 	r = r.WithContext(util.ContextWithHTTPSO(r.Context(), httpso))
