@@ -9,3 +9,7 @@ spec:
     port: 9901
     protocol: TCP
     targetPort: 9901
+  - name: control-plane
+    port: 5678
+    protocol: TCP
+    targetPort: 5678

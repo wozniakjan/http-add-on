@@ -23,6 +23,12 @@ type Serving struct {
 	AdminPort int `envconfig:"KEDA_HTTP_ADMIN_PORT" required:"true"`
 	// EnvoyStatsMetricSinkPort is the port that the external envoy proxies can send metrics to.
 	EnvoyStatsMetricSinkPort int `envconfig:"KEDA_HTTP_ENVOY_STATS_METRIC_SINK_PORT" default:"9901"`
+	// EnvoyControlPlaneServiceName is the name of the service for the envoy control plane
+	EnvoyControlPlaneServiceName string `envconfig:"KEDA_HTTP_ENVOY_CONTROL_PLANE_SERVICE_NAME" default:"keda-add-ons-http-interceptor-kedify-proxy-metric-sink"`
+	// EnvoyControlPlanePort is the port that the envoy control plane server should run on.
+	EnvoyControlPlanePort int `envconfig:"KEDA_HTTP_ENVOY_CONTROL_PLANE_PORT" default:"5678"`
+	// ClusterDomain is the domain that the interceptor should for internal DNS
+	ClusterDomain string `envconfig:"KEDA_HTTP_CLUSTER_DOMAIN" default:"cluster.local"`
 	// ConfigMapCacheRsyncPeriod is the time interval
 	// for the configmap informer to rsync the local cache.
 	ConfigMapCacheRsyncPeriod time.Duration `envconfig:"KEDA_HTTP_SCALER_CONFIG_MAP_INFORMER_RSYNC_PERIOD" default:"60m"`
