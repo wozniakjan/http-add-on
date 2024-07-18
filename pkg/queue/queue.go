@@ -109,6 +109,14 @@ func (r *Memory) EnsureKey(host string, window, granularity time.Duration) {
 	}
 }
 
+func (r *Memory) KeyExists(host string) bool {
+	r.mut.RLock()
+	defer r.mut.RUnlock()
+	_, okc := r.concurrentMap[host]
+	_, okr := r.rpsMap[host]
+	return okc && okr
+}
+
 func (r *Memory) UpdateBuckets(host string, window, granularity time.Duration) {
 	r.EnsureKey(host, window, granularity)
 	r.mut.Lock()

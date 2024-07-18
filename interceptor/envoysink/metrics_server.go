@@ -47,6 +47,8 @@ type counter interface {
 	SetRPS(host string, rps int) error
 	// SetConcurrency sets the concurrency for the given host.
 	SetConcurrency(host string, concurrency int) error
+	// KeyExists checks if the key exists in the counter.
+	KeyExists(host string) bool
 }
 
 // metricsServiceServer is a server for the metrics service.
@@ -192,16 +194,22 @@ func (s *metricsServiceServer) OnUpdate(o, n any) {
 		s.log.Info("not a HTTPScaledObject", "objNew", n, "type", fmt.Sprintf("%T", n))
 		return
 	}
-	if getClusterNameFromAnnotations(hsoNew.Annotations) == getClusterNameFromAnnotations(hsoOld.Annotations) {
+	oldClusterName := getClusterNameFromAnnotations(hsoOld.Annotations)
+	newClusterName := getClusterNameFromAnnotations(hsoNew.Annotations)
+	if oldClusterName == newClusterName {
 		s.log.V(4).Info("cluster name did not change", "hso", hsoNew)
+		if newClusterName != "" {
+			host := hsoNew.Namespace + "/" + hsoOld.Name
+			if !s.counter.KeyExists(host) {
+				s.addClusterNameToMetrics(newClusterName, hsoNew)
+			}
+		}
 		return
 	}
 
-	oldClusterName := getClusterNameFromAnnotations(hsoOld.Annotations)
 	if oldClusterName != "" {
 		s.deleteClusterNameFromMetrics(oldClusterName, hsoOld)
 	}
-	newClusterName := getClusterNameFromAnnotations(hsoNew.Annotations)
 	if newClusterName != "" {
 		s.addClusterNameToMetrics(newClusterName, hsoNew)
 	}
@@ -236,6 +244,7 @@ func (s *metricsServiceServer) addClusterNameToMetrics(clusterName string, hso *
 	granularity := 1 * time.Second
 	if hso.Spec.ScalingMetric != nil && hso.Spec.ScalingMetric.Rate != nil {
 		window = hso.Spec.ScalingMetric.Rate.Window.Duration
+		granularity = hso.Spec.ScalingMetric.Rate.Granularity.Duration
 	}
 	host := hso.Namespace + "/" + hso.Name
 	s.counter.EnsureKey(host, window, granularity)
